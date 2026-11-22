@@ -1,0 +1,7 @@
+MIT License
+
+Copyright (c) 2026 Golden-forest
+
+Architecture informed by cheapestinference/claude-auto-retry (MIT):
+the StopFailure-hook seam, pane foreground safety check, and the
+Chinese rate-limit message patterns originate there.
