@@ -6,14 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Golden-forest/claude-sentinel/internal/binding"
 	"github.com/Golden-forest/claude-sentinel/internal/classify"
 	"github.com/Golden-forest/claude-sentinel/internal/eventbus"
 	"github.com/Golden-forest/claude-sentinel/internal/executor"
+	"github.com/Golden-forest/claude-sentinel/internal/fswatch"
 	"github.com/Golden-forest/claude-sentinel/internal/guard"
 	"github.com/Golden-forest/claude-sentinel/internal/machine"
+	"github.com/Golden-forest/claude-sentinel/internal/transcript"
 )
 
 type Config struct {
@@ -23,6 +28,7 @@ type Config struct {
 	TmuxSocket string // 兜底用；实际以绑定表里的会话所属 socket 为准
 	RetryText  string
 	Tick       time.Duration
+	WatchRoot  string // transcript 根目录；空则启用 FSEvents 补偿通道
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -42,6 +48,14 @@ func Run(ctx context.Context, cfg Config) error {
 	if tick <= 0 {
 		tick = 5 * time.Second
 	}
+	fsChanges := make(chan string, 64)
+	if cfg.WatchRoot != "" {
+		baselineCursors(cfg.WatchRoot) // 先建基线，事件到达时 cursor 已就位
+		if err := fswatch.Watch(ctx, cfg.WatchRoot, fsChanges); err != nil {
+			log.Printf("[sentinel] fswatch unavailable: %v", err)
+		}
+	}
+
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
@@ -51,8 +65,73 @@ func Run(ctx context.Context, cfg Config) error {
 			return nil
 		case ev := <-events:
 			handleEvent(store, bindings, ev)
+		case p := <-fsChanges:
+			handleFsChange(store, p)
 		case <-ticker.C:
 			sweep(store, bindings, cfg)
+		}
+	}
+}
+
+// cursors 由基线预建；并发仅事件循环单线程访问，无锁。
+var cursors = map[string]*transcript.Cursor{}
+
+// baselineCursors 把 WatchRoot 下全部 jsonl 的 cursor 预建到当前末尾，
+// 避免「事件晚于写入到达 → 惰性建 cursor 踩掉触发行」。
+func baselineCursors(root string) {
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(p, ".jsonl") {
+			return nil
+		}
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			p = real
+		}
+		if c, err := transcript.NewCursor(p); err == nil {
+			cursors[p] = c
+		}
+		return nil
+	})
+}
+
+func handleFsChange(store *machine.Store, path string) {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real // FSEvents 上报已解析路径，与基线键统一
+	}
+	c, ok := cursors[path]
+	if !ok {
+		nc, err := transcript.NewCursor(path)
+		if err != nil {
+			return
+		}
+		cursors[path] = nc
+		c = nc
+	}
+	lines, err := c.Poll()
+	if err != nil {
+		delete(cursors, path)
+		return
+	}
+	for _, ln := range lines {
+		inc, ok := classify.ClassifyError("", ln) // watch 通道：类型未知，走文本正则
+		if !ok {
+			continue
+		}
+		var sid struct {
+			SessionID string `json:"session_id"`
+		}
+		_ = json.Unmarshal(ln, &sid)
+		m := machine.Incident{
+			ID:        fmt.Sprintf("%s@%d", sid.SessionID, inc.ResetAt),
+			SessionID: sid.SessionID, TranscriptPath: path,
+			ResetAt: inc.ResetAt, Source: "jsonl", Pattern: inc.Pattern,
+			State: machine.StateScheduled,
+		}
+		if m.SessionID == "" {
+			m.SessionID = "unknown:" + path
+			m.ID = m.SessionID + fmt.Sprintf("@%d", inc.ResetAt)
+		}
+		if err := store.Update(&m); err == nil {
+			log.Printf("[sentinel] fs incident %s (via %s)", m.ID, m.Pattern)
 		}
 	}
 }
