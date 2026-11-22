@@ -201,5 +201,8 @@ StopFailure matcher（`…|rate|limit|429|…`）在 P0-1 后按结构化类型�
 
 ## 14. 开放问题
 
-- P0 四项实测结果回填后确认 §5.1 matcher 确切写法与 §5.2 主来源
+- ~~P0-1~~ **已实测坐实（2026-11-22 20:41）**：真实智谱限额 429 的 StopFailure `error` 字段 = `"rate_limit"`，
+  `last_assistant_message` 含中文重置文案——classify 白名单与主解析路径正确（证据：
+  `p0/results/stopfailure-20261122-204105.json`）。P0-2（jsonl quotaLimits 字段）与 P0-4（原生通知）
+  继续挂观察；P0-3 已过。
 - 项目名暂定 claude-sentinel
