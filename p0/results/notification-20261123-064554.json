@@ -1,0 +1,15 @@
+---STDIN---
+{"session_id":"af15fe5c-262b-497d-9155-9596d75b5ea9","transcript_path":"/Users/hl/.claude/projects/-Users-hl-Projects-roomfold/af15fe5c-262b-497d-9155-9596d75b5ea9.jsonl","cwd":"/Users/hl/Projects/roomfold","prompt_id":"69679af7-9d28-4cb8-b2fb-d463af4c07a3","hook_event_name":"Notification","message":"Claude is waiting for your input","notification_type":"idle_prompt"}
+---ENV---
+CLAUDE_CODE_MESSAGING_TOKEN=8695e269780f89ec493128b998954a8d
+CLAUDE_CODE_ENTRYPOINT=cli
+CLAUDE_CODE_CHILD_SESSION=1
+CLAUDE_PID=8938
+CLAUDE_PROJECT_DIR=/Users/hl/Projects/roomfold
+CLAUDE_AUTO_RETRY_PANE=%2
+TMUX_PANE=%2
+CLAUDE_CODE_SESSION_ATTENDED=1
+CLAUDE_AUTO_RETRY_ACTIVE=1
+CLAUDE_CODE_SESSION_ID=af15fe5c-262b-497d-9155-9596d75b5ea9
+CLAUDE_CODE_MESSAGING_SOCKET=/tmp/cc-socks/8938.sock
+CLAUDECODE=1
