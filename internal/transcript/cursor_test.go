@@ -73,14 +73,18 @@ func TestRestore_SameInode(t *testing.T) {
 	}
 }
 
-// inode 变化（文件被替换）→ 重扫全文件
+// inode 变化（文件被原子替换：temp+rename）→ 重扫全文件
 func TestRestore_InodeChanged(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	writeFile(t, path, "{\"old\":1}\n")
 	c, _ := NewCursor(path)
 	c.Poll()
 	dev, ino, off := c.Checkpoint()
-	writeFile(t, path, "{\"new\":1}\n") // 全新文件，新 inode
+	tmp := path + ".tmp"
+	writeFile(t, tmp, "{\"new\":1}\n")
+	if err := os.Rename(tmp, path); err != nil { // 真替换 → 新 inode
+		t.Fatal(err)
+	}
 	c2, err := RestoreCursor(dev, ino, off, path)
 	if err != nil {
 		t.Fatal(err)

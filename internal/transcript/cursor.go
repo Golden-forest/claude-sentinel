@@ -77,10 +77,7 @@ func RestoreCursor(dev, ino uint64, off int64, path string) (*Cursor, error) {
 	case off > size:
 		c.off = 0 // 截断
 	default:
-		c.off = off
-		if err := c.initPending(size); err != nil {
-			return nil, err
-		}
+		c.off = off // 检查点已是完整行边界，直接信任
 	}
 	return c, nil
 }
