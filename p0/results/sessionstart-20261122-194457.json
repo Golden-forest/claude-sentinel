@@ -1,0 +1,10 @@
+---STDIN---
+{"session_id":"0ba3729d-24f3-45db-a871-f00f0e624f08","transcript_path":"/Users/hl/.claude/projects/-private-tmp/0ba3729d-24f3-45db-a871-f00f0e624f08.jsonl","cwd":"/private/tmp","hook_event_name":"SessionStart","source":"startup"}
+---ENV---
+CLAUDE_PROJECT_DIR=/private/tmp
+CLAUDE_AUTO_RETRY_PANE=%0
+TMUX=/private/tmp/tmux-501/default,1295,0
+TMUX_PANE=%0
+CLAUDE_AUTO_RETRY_ACTIVE=1
+---CWD---
+/tmp

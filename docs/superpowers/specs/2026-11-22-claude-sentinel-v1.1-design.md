@@ -81,7 +81,9 @@ sentinel watch（唯一常驻进程，launchd 管理）:
 
 ### 5.1 限额事故的识别（优先级序）
 
-1. **StopFailure 事件的 error 结构化类型**（如 `rate_limit`；P0-1 定确切值）——第一手，最可靠
+1. **StopFailure 事件的 error 结构化类型**（如 `rate_limit`；P0-1 定确切值）——第一手，最可靠。
+   P0-1 中期实测（2026-11-22）：载荷含 `error`（类型串，连接错误=server_error）、
+   `last_assistant_message`（完整报错文本）——**重置时间可从钩子载荷直接解析**，不必等异步 jsonl
 2. **jsonl 结构化字段**：`isApiErrorMessage` + `quotaLimits.{rateLimitType, resetsAt}`（epoch）
 3. **降级正则**（仅上述缺失时）：v1 的 9 条模式，匹配后仍必须拿到可信重置时间才继续
 

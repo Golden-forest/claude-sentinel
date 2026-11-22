@@ -1,0 +1,17 @@
+---STDIN---
+{"session_id":"0ba3729d-24f3-45db-a871-f00f0e624f08","transcript_path":"/Users/hl/.claude/projects/-private-tmp/0ba3729d-24f3-45db-a871-f00f0e624f08.jsonl","cwd":"/private/tmp","prompt_id":"547d55ad-1ac6-4161-a34e-3de61ee208f4","effort":{"level":"high"},"hook_event_name":"StopFailure","error":"server_error","last_assistant_message":"API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)"}
+---ENV---
+CLAUDE_CODE_MESSAGING_TOKEN=93f91c943f8d1866f3c78ac6bcafa721
+CLAUDE_CODE_ENTRYPOINT=sdk-cli
+CLAUDE_EFFORT=high
+CLAUDE_CODE_CHILD_SESSION=1
+CLAUDE_PID=24026
+CLAUDE_PROJECT_DIR=/private/tmp
+CLAUDE_AUTO_RETRY_PANE=%0
+TMUX_PANE=%0
+CLAUDE_CODE_SESSION_ATTENDED=0
+CLAUDE_CODE_EXECPATH=/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
+CLAUDE_AUTO_RETRY_ACTIVE=1
+CLAUDE_CODE_SESSION_ID=0ba3729d-24f3-45db-a871-f00f0e624f08
+CLAUDECODE=1
+CLAUDE_CODE_MESSAGING_SOCKET=/tmp/cc-socks/24026.sock
