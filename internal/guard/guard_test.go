@@ -13,12 +13,12 @@ func openInc() *machine.Incident {
 
 func allGood() Evidence {
 	return Evidence{
-		IncidentOpen:           true,
-		BindingAlive:           true,
-		PaneExists:             true,
-		PaneInCopyMode:         false,
-		ResetAtPassed:          true,
-		NativeResumed:          false,
+		IncidentOpen:            true,
+		BindingAlive:            true,
+		PaneExists:              true,
+		PaneInCopyMode:          false,
+		ResetAtPassed:           true,
+		NativeResumed:           false,
 		NewerTranscriptActivity: false,
 	}
 }

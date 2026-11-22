@@ -45,8 +45,8 @@ type Incident struct {
 func Due(inc *Incident, now int64) bool { return now >= inc.ResetAt }
 
 type persisted struct {
-	Version   int        `json:"version"`
-	Seq       int64      `json:"seq"`
+	Version   int         `json:"version"`
+	Seq       int64       `json:"seq"`
 	Incidents []*Incident `json:"incidents"`
 }
 
