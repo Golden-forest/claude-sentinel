@@ -50,6 +50,8 @@ GPT 审查引用的是官方文档；第三方端点行为必须实测。四项�
 | P0-1 | 智谱限额 429 时 StopFailure 是否触发、error 类型的确切取值 | 临时 hook 打印 stdin JSON + 等真实/复现额度错误 | 决定 matcher 写法（预期 `rate_limit` 类结构化值，而非自由文本） |
 | P0-2 | 报错时 transcript jsonl 是否含 `quotaLimits.resetsAt`（epoch）、写入延迟 | 对比 hook 触发时刻与 jsonl 落盘时刻 | 决定重置时间主来源与补偿策略 |
 | P0-3 | SessionStart 钩子能否稳定读到 TMUX/TMUX_PANE 环境并携带 session_id | 临时 SessionStart hook 落盘观察 | 决定会话绑定方案可行性 |
+
+**P0-3 已验证（2026-11-22 19:40）**：stdin JSON 含 `session_id`+`transcript_path`+`cwd`，env 含 `TMUX`（socket 路径）+`TMUX_PANE`（pane id）+`CLAUDE_PROJECT_DIR`。绑定表设计成立，载荷形状见 `p0/results/sessionstart-20261122-194013.json`。探针保留至 Task 12 转正。
 | P0-4 | `quota_auto_resume_*` 通知在智谱端点是否触发 | 临时 Notification hook 观察 | 预期不触发（原生机制不认第三方限额）；若触发则订阅之用于退让 |
 
 任何一项实测与本文假设不符 → 回到设计阶段修订对应章节。
