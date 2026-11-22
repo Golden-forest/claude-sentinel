@@ -27,8 +27,11 @@ func tmuxRun(socket string, args ...string) (string, error) {
 	return string(out), nil
 }
 
-// SendContinue 两步分离：-l 字面文本（不被解释为键名），再单独发 Enter。
+// SendContinue 三步：C-u 清行（重试防叠字）→ -l 字面文本 → 单独 Enter。
 func SendContinue(socket, paneID, text string) error {
+	if _, err := tmuxRun(socket, "send-keys", "-t", paneID, "C-u"); err != nil {
+		return err
+	}
 	if _, err := tmuxRun(socket, "send-keys", "-t", paneID, "-l", text); err != nil {
 		return err
 	}

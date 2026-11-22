@@ -53,6 +53,10 @@ func SpoolWrite(dir string, e Event) error {
 		tmp.Close()
 		return err
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
 	tmp.Close()
 	return os.Rename(tmpName, filepath.Join(dir, name+".json"))
 }
@@ -82,7 +86,8 @@ func SpoolImport(dir string, out chan<- Event) (int, error) {
 		}
 		var e Event
 		if err := json.Unmarshal(b, &e); err != nil {
-			continue // 坏文件跳过并清走
+			os.Remove(filepath.Join(dir, nm)) // 坏文件清走，不留死循环
+			continue
 		}
 		out <- e
 		n++

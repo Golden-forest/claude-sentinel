@@ -8,8 +8,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/Golden-forest/claude-sentinel/internal/binding"
@@ -21,8 +23,8 @@ import (
 )
 
 const (
-	label       = "com.hl.claude-sentinel.watch"
-	ownCmdPfx   = "sentinel hook"
+	label = "com.hl.claude-sentinel.watch"
+
 	hookMatcher = "rate_limit|overloaded|server_error|api_error"
 )
 
@@ -49,9 +51,18 @@ func main() {
 	switch os.Args[1] {
 	case "watch":
 		cfg := defaults()
+		cfg.WatchRoot = watchRoot()
 		os.MkdirAll(cfg.SpoolDir, 0700)
 		os.MkdirAll(filepath.Join(stateDir(), "logs"), 0700)
-		if err := daemon.Run(context.Background(), cfg); err != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT) // I3：优雅退出
+		go func() {
+			<-sig
+			cancel()
+		}()
+		if err := daemon.Run(ctx, cfg); err != nil {
 			fmt.Fprintln(os.Stderr, "sentinel watch:", err)
 			os.Exit(1)
 		}
@@ -103,8 +114,17 @@ func hookMain(event string) {
 	case "stop_failure", "notification":
 		ev.Payload = json.RawMessage(stdin) // 原文转发，daemon 侧解析 error 等字段
 	case "session_start":
-		payload := map[string]any{"tmux_socket": os.Getenv("TMUX"), "pane_id": os.Getenv("TMUX_PANE")}
-		if pid, err := strconv.Atoi(os.Getenv("CLAUDE_PID")); err == nil {
+		payload := map[string]any{
+			"tmux_socket": daemon.ParseTmuxSocket(os.Getenv("TMUX")), // C2：拆掉 ,pid,session 后缀
+			"pane_id":     os.Getenv("TMUX_PANE"),
+		}
+		pid := 0
+		if v, err := strconv.Atoi(os.Getenv("CLAUDE_PID")); err == nil {
+			pid = v
+		} else {
+			pid = os.Getppid() // I1：钩子由 claude 直接 spawn 时 PPID 即 claude
+		}
+		if pid > 0 {
 			payload["pid"] = pid
 			if st, err := binding.ProcStartTime(pid); err == nil {
 				payload["started_at"] = st
@@ -116,9 +136,11 @@ func hookMain(event string) {
 	conn, err := net.DialTimeout("unix", defaults().SocketPath, time.Second)
 	if err == nil {
 		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(1500 * time.Millisecond))
 		b, _ := json.Marshal(ev)
-		conn.Write(append(b, '\n'))
-		return
+		if _, err := conn.Write(append(b, '\n')); err == nil {
+			return
+		}
 	}
 	cfg := defaults()
 	os.MkdirAll(cfg.SpoolDir, 0700)
@@ -169,6 +191,11 @@ func installMain() {
 	fmt.Println("sentinel installed: hooks merged + launchd agent running")
 }
 
+func watchRoot() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude", "projects")
+}
+
 func homeLaunchAgents() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Library", "LaunchAgents")
@@ -177,7 +204,7 @@ func homeLaunchAgents() string {
 func uninstallMain() {
 	_ = svc.Bootout(label)
 	os.Remove(filepath.Join(homeLaunchAgents(), label+".plist"))
-	if err := hooks.RemoveOwnHooks(settingsPath(), ownCmdPfx); err != nil {
+	if err := hooks.RemoveOwnHooks(settingsPath(), binPath()+" hook"); err != nil {
 		fmt.Fprintln(os.Stderr, "remove hooks:", err)
 	}
 	fmt.Println("sentinel uninstalled (own entries only)")
@@ -194,16 +221,21 @@ func statusMain() {
 	if n, err := countSpool(cfg.SpoolDir); err == nil && n > 0 {
 		fmt.Printf("spool: %d pending\n", n)
 	}
-	if s, err := machine.OpenStore(cfg.StatePath); err == nil {
-		for _, inc := range s.Active() {
-			fmt.Printf("incident %s state=%s reset=%d (%s)\n", inc.ID, inc.State, inc.ResetAt,
-				time.Unix(inc.ResetAt, 0).Format("01-02 15:04:05"))
+	if b, err := os.ReadFile(cfg.StatePath); err == nil {
+		var st struct {
+			Incidents []*machine.Incident `json:"incidents"`
 		}
-		if len(s.Active()) == 0 {
-			fmt.Println("incidents: none active")
+		if json.Unmarshal(b, &st) == nil {
+			n := 0
+			for _, inc := range st.Incidents {
+				fmt.Printf("incident %s state=%s reset=%d (%s)\n", inc.ID, inc.State, inc.ResetAt,
+					time.Unix(inc.ResetAt, 0).Format("01-02 15:04:05"))
+				n++
+			}
+			if n == 0 {
+				fmt.Println("incidents: none")
+			}
 		}
-	} else {
-		fmt.Println("state:", err)
 	}
 }
 

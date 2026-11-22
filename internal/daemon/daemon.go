@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Golden-forest/claude-sentinel/internal/binding"
@@ -31,24 +32,59 @@ type Config struct {
 	WatchRoot  string // transcript 根目录；空则启用 FSEvents 补偿通道
 }
 
+// acquireInstanceLock 进程生命周期持锁；抢不到 = 已有实例。
+func acquireInstanceLock(statePath string) (*os.File, error) {
+	f, err := os.OpenFile(statePath+".instance.lock", os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("another sentinel instance holds %s", statePath+".instance.lock")
+	}
+	return f, nil
+}
+
 func Run(ctx context.Context, cfg Config) error {
+	lock, err := acquireInstanceLock(cfg.StatePath)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	store, err := machine.OpenStore(cfg.StatePath)
 	if err != nil {
 		return err
 	}
-	bindings := binding.NewTable()
+	bindings := binding.NewTable(cfg.StatePath + ".bindings.json") // I5：重启恢复绑定
+	_ = bindings
+	// I3：上次发送途中崩溃遗留的 VERIFYING 不可知是否已敲键 → 退位人工
+	for _, inc := range store.Active() {
+		if inc.State == machine.StateVerifying {
+			inc.State = machine.StateNeedsReview
+			_ = store.Update(inc)
+			log.Printf("[sentinel] startup: VERIFYING %s → NEEDS_REVIEW (send state unknown)", inc.ID)
+		}
+	}
 	events := make(chan eventbus.Event, 64)
 
-	go eventbus.Serve(ctx, cfg.SocketPath, events)
-	if n, err := eventbus.SpoolImport(cfg.SpoolDir, events); err == nil && n > 0 {
-		log.Printf("[sentinel] spool imported %d events", n)
-	}
+	go func() {
+		if err := eventbus.Serve(ctx, cfg.SocketPath, events); err != nil {
+			log.Printf("[sentinel] socket serve failed: %v (spool-only mode)", err)
+		}
+	}()
+	go func() { // 与事件循环并发导入，防 >chan 缓冲的积压死锁
+		if n, err := eventbus.SpoolImport(cfg.SpoolDir, events); err == nil && n > 0 {
+			log.Printf("[sentinel] spool imported %d events", n)
+		}
+	}()
 
 	tick := cfg.Tick
 	if tick <= 0 {
 		tick = 5 * time.Second
 	}
 	fsChanges := make(chan string, 64)
+	tickCount := 0
 	if cfg.WatchRoot != "" {
 		baselineCursors(cfg.WatchRoot) // 先建基线，事件到达时 cursor 已就位
 		if err := fswatch.Watch(ctx, cfg.WatchRoot, fsChanges); err != nil {
@@ -68,7 +104,13 @@ func Run(ctx context.Context, cfg Config) error {
 		case p := <-fsChanges:
 			handleFsChange(store, p)
 		case <-ticker.C:
+			tickCount++
 			sweep(store, bindings, cfg)
+			if cfg.WatchRoot != "" && tickCount%6 == 0 { // I7：事件丢了也兜底
+				for p := range cursors {
+					handleFsChange(store, p)
+				}
+			}
 		}
 	}
 }
@@ -154,7 +196,7 @@ func handleEvent(store *machine.Store, bindings *binding.Table, ev eventbus.Even
 	case "session_start":
 		var p sessionPayload
 		if err := json.Unmarshal(ev.Payload, &p); err != nil || p.Pid == 0 || p.PaneID == "" {
-			log.Printf("[sentinel] session_start unusable: %v", err)
+			log.Printf("[sentinel] session_start unusable (missing pid/pane): err=%v", err)
 			return
 		}
 		p.TmuxSocket = firstNonEmpty(p.TmuxSocket, defaultSocket())
@@ -184,6 +226,13 @@ func handleEvent(store *machine.Store, bindings *binding.Table, ev eventbus.Even
 			Source:         c.Source,
 			Pattern:        c.Pattern,
 			State:          machine.StateScheduled,
+		}
+		if prev, ok := store.Get(m.ID); ok {
+			switch prev.State {
+			case machine.StateSentUnconfirmed, machine.StateResolved, machine.StateCancelled, machine.StateNeedsReview, machine.StateVerifying:
+				return // 终态/已发送：同 ID 重放不回退（I2）
+			}
+			m.Attempts = prev.Attempts
 		}
 		if err := store.Update(&m); err != nil {
 			log.Printf("[sentinel] store update: %v", err)
@@ -221,10 +270,20 @@ func sweep(store *machine.Store, bindings *binding.Table, cfg Config) {
 				ev.PaneInCopyMode = info.InCopyMode
 			}
 		}
+		if inc.Attempts >= 6 {
+			inc.State = machine.StateNeedsReview
+			_ = store.Update(inc)
+			log.Printf("[sentinel] %s hit max retries", inc.ID)
+			continue
+		}
 		switch guard.Check(inc, bPtr, ev) {
 		case guard.VerdictProceed:
+			inc.State = machine.StateVerifying // 先落检查点：崩溃后宁可人工不重发
+			_ = store.Update(inc)
 			if err := executor.SendContinue(b.TmuxSocket, b.PaneID, firstNonEmpty(cfg.RetryText, "continue")); err != nil {
-				log.Printf("[sentinel] send failed for %s: %v", inc.ID, err)
+				inc.State = machine.StateNeedsReview // 发送失败不自动重试：杜绝半失败态叠字
+				_ = store.Update(inc)
+				log.Printf("[sentinel] send FAILED for %s: %v → NEEDS_REVIEW", inc.ID, err)
 				continue
 			}
 			inc.State = machine.StateSentUnconfirmed
@@ -246,6 +305,16 @@ func sweep(store *machine.Store, bindings *binding.Table, cfg Config) {
 	}
 }
 
+// ParseTmuxSocket 拆出 TMUX 环境变量的纯 socket 路径（格式：socket,pid,session）。
+func ParseTmuxSocket(v string) string {
+	for i := 0; i < len(v); i++ {
+		if v[i] == ',' {
+			return v[:i]
+		}
+	}
+	return v
+}
+
 func firstNonEmpty(a, b string) string {
 	if a != "" {
 		return a
@@ -254,5 +323,5 @@ func firstNonEmpty(a, b string) string {
 }
 
 func defaultSocket() string {
-	return "/private/tmp/tmux-501/default"
+	return fmt.Sprintf("/private/tmp/tmux-%d/default", os.Getuid())
 }

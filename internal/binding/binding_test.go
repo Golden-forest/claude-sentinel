@@ -2,6 +2,7 @@ package binding
 
 import (
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -54,5 +55,17 @@ func TestStillValid_PidReuseMismatch(t *testing.T) {
 	b := Binding{SessionID: "s", Pid: cmd.Process.Pid, StartedAt: st - 7}
 	if b.StillValid() {
 		t.Fatal("same pid but wrong start time must be invalid (reuse)")
+	}
+}
+
+// I5：绑定持久化——新 Table 从文件恢复
+func TestTable_PersistRestore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bindings.json")
+	t1 := NewTable(path)
+	t1.Put(Binding{SessionID: "s-p", PaneID: "%9", Pid: 42, StartedAt: 100})
+	t2 := NewTable(path)
+	b, ok := t2.Get("s-p")
+	if !ok || b.PaneID != "%9" || b.Pid != 42 {
+		t.Fatalf("restore lost binding: %+v ok=%v", b, ok)
 	}
 }

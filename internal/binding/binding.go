@@ -3,6 +3,7 @@
 package binding
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strconv"
@@ -23,16 +24,37 @@ type Binding struct {
 type Table struct {
 	mu        sync.RWMutex
 	bySession map[string]Binding
+	persist   string // 非空则每次变更原子落盘
 }
 
-func NewTable() *Table {
-	return &Table{bySession: make(map[string]Binding)}
+func NewTable(persistPath ...string) *Table {
+	t := &Table{bySession: make(map[string]Binding)}
+	if len(persistPath) > 0 && persistPath[0] != "" {
+		t.persist = persistPath[0]
+		if b, err := os.ReadFile(t.persist); err == nil {
+			_ = json.Unmarshal(b, &t.bySession) // 重启恢复绑定；有效性由 StillValid 复核
+		}
+	}
+	return t
+}
+
+func (t *Table) saveLocked() {
+	if t.persist == "" {
+		return
+	}
+	if b, err := json.Marshal(t.bySession); err == nil {
+		tmp := t.persist + ".tmp"
+		if os.WriteFile(tmp, b, 0600) == nil {
+			os.Rename(tmp, t.persist)
+		}
+	}
 }
 
 func (t *Table) Put(b Binding) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.bySession[b.SessionID] = b
+	t.saveLocked()
 }
 
 func (t *Table) Get(sessionID string) (Binding, bool) {
@@ -46,6 +68,7 @@ func (t *Table) Invalidate(sessionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.bySession, sessionID)
+	t.saveLocked()
 }
 
 // ProcStartTime 取进程启动时刻（epoch 秒）。强制 LC_ALL=C 防 locale 差异。
