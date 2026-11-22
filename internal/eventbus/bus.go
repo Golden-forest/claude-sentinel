@@ -15,12 +15,12 @@ import (
 )
 
 type Event struct {
-	ID             string `json:"id"`
-	Kind           string `json:"kind"` // stop_failure | session_start | session_end | notification | fs
-	SessionID      string `json:"session_id,omitempty"`
-	TranscriptPath string `json:"transcript_path,omitempty"`
-	Payload        []byte `json:"payload,omitempty"`
-	Ts             int64  `json:"ts"`
+	ID             string          `json:"id"`
+	Kind           string          `json:"kind"` // stop_failure | session_start | session_end | notification | fs
+	SessionID      string          `json:"session_id,omitempty"`
+	TranscriptPath string          `json:"transcript_path,omitempty"`
+	Payload        json.RawMessage `json:"payload,omitempty"`
+	Ts             int64           `json:"ts"`
 }
 
 var unsafeChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)

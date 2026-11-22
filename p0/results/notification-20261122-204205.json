@@ -1,0 +1,15 @@
+---STDIN---
+{"session_id":"f632c57f-d6c5-4c5a-8b6b-f24f77849f6b","transcript_path":"/Users/hl/.claude/projects/-Users-hl/f632c57f-d6c5-4c5a-8b6b-f24f77849f6b.jsonl","cwd":"/Users/hl/Projects/claude-sentinel","prompt_id":"e0147dbe-23cb-43f0-86e9-09fbdd5735f9","hook_event_name":"Notification","message":"Claude is waiting for your input","notification_type":"idle_prompt"}
+---ENV---
+CLAUDE_CODE_MESSAGING_TOKEN=e2366c30f8155f7fbb7998f67106a62a
+CLAUDE_CODE_ENTRYPOINT=cli
+CLAUDE_CODE_CHILD_SESSION=1
+CLAUDE_PID=1350
+CLAUDE_PROJECT_DIR=/Users/hl
+CLAUDE_AUTO_RETRY_PANE=%0
+TMUX_PANE=%0
+CLAUDE_CODE_SESSION_ATTENDED=1
+CLAUDE_AUTO_RETRY_ACTIVE=1
+CLAUDE_CODE_SESSION_ID=f632c57f-d6c5-4c5a-8b6b-f24f77849f6b
+CLAUDE_CODE_MESSAGING_SOCKET=/tmp/cc-socks/1350.sock
+CLAUDECODE=1

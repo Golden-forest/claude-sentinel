@@ -1,0 +1,10 @@
+---STDIN---
+{"session_id":"af15fe5c-262b-497d-9155-9596d75b5ea9","transcript_path":"/Users/hl/.claude/projects/-Users-hl-Projects-roomfold/af15fe5c-262b-497d-9155-9596d75b5ea9.jsonl","cwd":"/Users/hl/Projects/roomfold","prompt_id":"04098922-bd1b-423c-8f91-a2263d883db8","hook_event_name":"SessionStart","source":"compact","model":"glm-5.3[1m]"}
+---ENV---
+CLAUDE_PROJECT_DIR=/Users/hl/Projects/roomfold
+CLAUDE_AUTO_RETRY_PANE=%2
+TMUX=/private/tmp/tmux-501/default,1295,2
+TMUX_PANE=%2
+CLAUDE_AUTO_RETRY_ACTIVE=1
+---CWD---
+/Users/hl/Projects/roomfold
