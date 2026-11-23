@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -111,7 +112,10 @@ func hookMain(event string) {
 		Ts:             time.Now().Unix(),
 	}
 	switch kind {
-	case "stop_failure", "notification":
+	case "stop_failure":
+		// F1：原文转发 + 注入 tmux 环境——daemon 侧据此给「安装前已在跑的会话」补绑定
+		ev.Payload = enrichFailurePayload(stdin)
+	case "notification":
 		ev.Payload = json.RawMessage(stdin) // 原文转发，daemon 侧解析 error 等字段
 	case "session_start":
 		payload := map[string]any{
@@ -145,6 +149,36 @@ func hookMain(event string) {
 	cfg := defaults()
 	os.MkdirAll(cfg.SpoolDir, 0700)
 	_ = eventbus.SpoolWrite(cfg.SpoolDir, ev)
+}
+// enrichFailurePayload 把 tmux 环境合并进 StopFailure 原文（F1）。
+// 不在 tmux 里的会话原样返回；stdin 非法 JSON 时也原样返回（daemon 侧自会容错）。
+func enrichFailurePayload(stdin []byte) json.RawMessage {
+	if strings.TrimSpace(os.Getenv("TMUX_PANE")) == "" {
+		return json.RawMessage(stdin)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(stdin, &m); err != nil || m == nil {
+		return json.RawMessage(stdin)
+	}
+	m["tmux_socket"] = daemon.ParseTmuxSocket(os.Getenv("TMUX"))
+	m["pane_id"] = os.Getenv("TMUX_PANE")
+	pid := 0
+	if v, err := strconv.Atoi(os.Getenv("CLAUDE_PID")); err == nil {
+		pid = v
+	} else {
+		pid = os.Getppid() // I1：钩子由 claude 直接 spawn 时 PPID 即 claude
+	}
+	if pid > 0 {
+		m["pid"] = pid
+		if st, err := binding.ProcStartTime(pid); err == nil {
+			m["started_at"] = st
+		}
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return json.RawMessage(stdin)
+	}
+	return b
 }
 
 func binPath() string {

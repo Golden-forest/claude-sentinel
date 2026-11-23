@@ -1,7 +1,9 @@
 package executor
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,5 +69,37 @@ func TestGetPaneInfo(t *testing.T) {
 	}
 	if info.ForegroundPid <= 0 {
 		t.Fatalf("ForegroundPid = %d", info.ForegroundPid)
+	}
+}
+
+// C9（launchd 实况，2026-11-24 生产事故）：守护进程环境没有 LANG，tmux 在
+// C locale 下会把格式串里的 \t 消毒成 _，\t 分隔当场解析失败——生产 9 次
+// 事故全部 pane=false 的根因。Go 的 os.Unsetenv 不影响子进程，所以用
+// 子进程重执行精确复现 launchd 的裸环境。
+func TestGetPaneInfo_BareEnv(t *testing.T) {
+	if os.Getenv("SENTINEL_BARE_CHILD") == "1" {
+		info, err := GetPaneInfo(testSocket, os.Getenv("TEST_PANE"))
+		if err != nil {
+			fmt.Println("CHILD_ERR:", err)
+			os.Exit(2)
+		}
+		fmt.Println("CHILD_OK:", info.ID, info.ForegroundPid)
+		return
+	}
+	pane := setupPane(t, "sleep 60")
+	defer cleanup(t)
+	cmd := exec.Command(os.Args[0], "-test.run=TestGetPaneInfo_BareEnv", "-test.v=false")
+	cmd.Env = []string{
+		"SENTINEL_BARE_CHILD=1",
+		"TEST_PANE=" + pane,
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.Getenv("HOME"),
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bare-env child must parse pane info (launchd reality), child said: %s (err=%v)", out, err)
+	}
+	if !strings.Contains(string(out), "CHILD_OK: "+pane) {
+		t.Fatalf("child reported wrong pane: %s", out)
 	}
 }

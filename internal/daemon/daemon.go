@@ -189,6 +189,12 @@ type failurePayload struct {
 	Error                string `json:"error"`
 	LastAssistantMessage string `json:"last_assistant_message"`
 	TranscriptPath       string `json:"transcript_path"`
+	// F1：钩子侧注入的 tmux 环境——覆盖「sentinel 安装前已在跑的会话」
+	// （它们不会再发 session_start，事故是唯一的绑定时机）。
+	TmuxSocket string `json:"tmux_socket"`
+	PaneID     string `json:"pane_id"`
+	Pid        int    `json:"pid"`
+	StartedAt  int64  `json:"started_at"`
 }
 
 func handleEvent(store *machine.Store, bindings *binding.Table, ev eventbus.Event) {
@@ -214,6 +220,17 @@ func handleEvent(store *machine.Store, bindings *binding.Table, ev eventbus.Even
 	case "stop_failure":
 		var p failurePayload
 		_ = json.Unmarshal(ev.Payload, &p)
+		if p.PaneID != "" && p.Pid > 0 { // F1：事故自带绑定信息 → 当场 upsert（比 session_start 更新）
+			p.TmuxSocket = firstNonEmpty(p.TmuxSocket, defaultSocket())
+			bindings.Put(binding.Binding{
+				SessionID:  ev.SessionID,
+				TmuxSocket: p.TmuxSocket,
+				PaneID:     p.PaneID,
+				Pid:        p.Pid,
+				StartedAt:  p.StartedAt,
+			})
+			log.Printf("[sentinel] bound %s → pane %s (pid %d, at failure)", ev.SessionID, p.PaneID, p.Pid)
+		}
 		c, ok := classify.ClassifyError(p.Error, ev.Payload)
 		if !ok {
 			return // 非限额类或解析不出可信重置时间：不动作

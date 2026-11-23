@@ -47,13 +47,14 @@ type PaneInfo struct {
 }
 
 // GetPaneInfo 用 display-message 单次查询 pane 身份与状态。
+// 分隔符用逗号不用 \t：launchd 环境无 LANG，tmux 在 C locale 下会把 \t 消毒成 _（C9）。
 func GetPaneInfo(socket, paneID string) (PaneInfo, error) {
 	out, err := tmuxRun(socket, "display-message", "-t", paneID,
-		"-p", "#{pane_id}\t#{pane_current_command}\t#{pane_in_copy_mode}\t#{pane_pid}")
+		"-p", "#{pane_id},#{pane_current_command},#{pane_in_copy_mode},#{pane_pid}")
 	if err != nil {
 		return PaneInfo{}, err
 	}
-	parts := strings.Split(strings.TrimSpace(out), "\t")
+	parts := strings.Split(strings.TrimSpace(out), ",")
 	if len(parts) != 4 {
 		return PaneInfo{}, fmt.Errorf("unexpected display-message output: %q", out)
 	}
