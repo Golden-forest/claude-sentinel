@@ -1,3 +1,4 @@
 bin/
 testsent*
+dist/
 docs/claude-sentinel-使用说明.html
