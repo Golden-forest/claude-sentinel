@@ -1,32 +1,58 @@
 # claude-sentinel
 
-Claude Code 额度自愈哨兵：限额 429 阵亡 → 事件驱动检测 → 等到重置 → 安全续跑。
+Resume Claude Code sessions automatically after usage-limit interruptions.
 
-## 架构（v1.1）
+When Claude Code hits a 429, sentinel reads the quota reset time, waits until it
+passes, verifies the session is still the one that died, and types `continue`
+into the right tmux pane.
+
+## Design
 
 ```
-事件入口(无轮询)                      常驻核心(单进程)                动作
-─────────────────                    ────────────────────           ──────────
-StopFailure 钩子 ──socket──┐
-SessionStart/End ──socket──┼──▶ Router → 绑定表 → 状态机 → Guard ──▶ tmux send-keys
-FSEvents jsonl 监听 ───────┘   (spool 兜底)   (epoch 调度)  (七道闸门)   (文本/Enter 分离)
+events (no polling)                daemon (single process)           action
+──────────────────                 ─────────────────────             ─────────
+StopFailure hook ───socket──┐
+SessionStart/End ───socket──┼──▶ router → bindings → state machine → tmux send-keys
+FSEvents on transcripts ────┘   (spool if down)  (7-gate guard)
 ```
 
-- 设计文档：`docs/superpowers/specs/2026-11-22-claude-sentinel-v1.1-design.md`
-- 外部审查：`docs/superpowers/reviews/2026-11-22-gpt-review.md`（GPT，修改后可执行）
+- Hooks deliver incidents over a unix socket; a spool directory catches events
+  while the daemon is down.
+- FSEvents on `~/.claude/projects/**/*.jsonl` is a compensation channel for
+  lost hook events.
+- Each incident walks DETECTED → SCHEDULED → DUE → VERIFYING → SENT → RESOLVED.
+- Seven gates stand between DUE and the keystroke: terminal state, binding
+  validity, PID + start-time match, pane existence, copy-mode, reset epoch
+  passed, no prior resume.
+- Anything ambiguous becomes NEEDS_REVIEW. It never types into a pane it
+  cannot prove is the session that died.
 
-## 使用
+## Install
 
-```sh
-sentinel install     # 合并钩子（结构化、只增删自有条目）+ 装 launchd 守护
-sentinel status      # 守护进程/事故/绑定状态
-sentinel uninstall   # 只移除自有条目
-```
+macOS only (launchd, FSEvents). Sessions must run inside tmux.
 
-## 致谢
+    go install github.com/Golden-forest/claude-sentinel/cmd/sentinel@latest
 
-前项目 [cheapestinference/claude-auto-retry](https://github.com/cheapestinference/claude-auto-retry)（MIT）。
-本项目把检测源从屏幕轮询换成「钩子事件 + transcript 文件监听」，砍掉每会话监视器进程。
+or grab a binary from
+[releases](https://github.com/Golden-forest/claude-sentinel/releases), then:
+
+    sentinel install     # merge hooks (own entries only) + launchd daemon
+    sentinel status      # daemon / incidents / bindings
+    sentinel uninstall   # remove own entries only
+
+## Background
+
+Rewrite of claude-auto-retry. That project watches the terminal screen and
+runs one monitor process per session; in practice incidents get missed and
+idle monitors pile up. Sentinel keeps the goal and replaces the detection
+model: hook events and transcript files instead of screen polling, one
+daemon instead of per-session monitors.
+
+## Acknowledgments
+
+Derived from
+[cheapestinference/claude-auto-retry](https://github.com/cheapestinference/claude-auto-retry)
+(MIT).
 
 ## License
 
